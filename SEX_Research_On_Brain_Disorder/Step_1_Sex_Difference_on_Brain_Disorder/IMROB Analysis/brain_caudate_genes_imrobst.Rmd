@@ -1,0 +1,242 @@
+---
+title: "Brain. QC_and_multithreading"
+output:
+  html_document: default
+  pdf_document: default
+date: "2024-07-26"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+### Read the expression, phenotype, and covariate data into workspace
+
+<br>
+
+#### Import the expression data 
+```{r Importe_expression, echo=TRUE}
+brain_caudate_tmp=read.table("/Users/muyangzhang/Desktop/research_sex/gtxforr/tpm_tissue/gene_tpm_brain_caudate_basal_ganglia.gct",stringsAsFactors = F,header=T,skip=2,check.names = F,sep='\t')
+
+brain_caudate_tmp_clean=brain_caudate_tmp[,c(2,4:dim(brain_caudate_tmp)[2])]
+
+```
+
+<br>
+<br>
+
+#### Reformat the expression data 
+```{r Reformat_expression, echo=TRUE}
+
+brain_caudate_tmp_new=as.data.frame(t(brain_caudate_tmp_clean))
+names(brain_caudate_tmp_new)=brain_caudate_tmp_new[1,]
+brain_caudate_tmp_new=brain_caudate_tmp_new[-1,]
+brain_caudate_tmp_new=cbind(data.frame(Tissue.ID=row.names(brain_caudate_tmp_new),
+                               Individual.ID=unlist(sapply(row.names(brain_caudate_tmp_new),function(x) sub("^([^\\-]+\\-[^\\-]+).*", "\\1", x)))),brain_caudate_tmp_new)
+head(brain_caudate_tmp_new)
+```
+
+<br>
+<br>
+
+### Import the phenotype data
+
+```{r Importe_phenotype, echo=TRUE}
+
+phenotype=read.table("/Users/muyangzhang/Desktop/research_sex/gtxforr/metadata_files/GTEx_Analysis_v8_Annotations_SubjectPhenotypesDS.txt", stringsAsFactors = F,header=T,check.names = F,sep='\t')
+head(phenotype)
+
+```
+
+<br>
+<br>
+
+### Import covariate data into R
+
+```{r Importe_cov, echo=TRUE}
+
+brain_caudate_cov=read.table("/Users/muyangzhang/Desktop/research_sex/gtxforr/cis_qtl/GTEx_Analysis_v8_eQTL_covariates/Brain_Caudate_basal_ganglia.v8.covariates.txt",stringsAsFactors = F,header=T,check.names = F,sep='\t')
+
+brain_caudate_cov_new=as.data.frame(t(brain_caudate_cov))
+names(brain_caudate_cov_new)=brain_caudate_cov_new[1,]
+brain_caudate_cov_new=brain_caudate_cov_new[-1,]
+brain_caudate_cov_new=cbind(data.frame(Individual.ID=row.names(brain_caudate_cov_new)),brain_caudate_cov_new)
+
+```
+
+
+#### Merge the three datasets
+
+```{r Merge_TPM_pheno, echo=TRUE}
+
+brain_caudate_tmp_pheno=merge(brain_caudate_tmp_new,phenotype,by.x='Individual.ID',by.y='SUBJID')
+brain_caudate_tmp_pheno_cov=merge(brain_caudate_tmp_pheno,brain_caudate_cov_new,by='Individual.ID')
+
+```
+
+
+<br>
+<br>
+
+#### converting age group to middle value
+```{r change_age, echo=TRUE, fig.margin=TRUE}
+library(dplyr)
+
+values_to_replace <- unique(brain_caudate_tmp_pheno_cov$AGE)
+```
+
+
+```{r change_age, echo=TRUE, fig.margin=TRUE}
+values_to_replace=values_to_replace[order(values_to_replace)]
+
+replacement_values <- c(25,35,45,55,65,75)
+
+brain_caudate_tmp_pheno_cov$AGE = sapply(brain_caudate_tmp_pheno_cov$AGE, function(x)
+                                 replacement_values[which(x==values_to_replace)])
+head(brain_caudate_tmp_pheno_cov)
+```
+
+<br>
+<br>
+
+#### Examine mean expression of all detected genes
+
+```{r calculate_mean, echo=TRUE, fig.margin=TRUE}
+
+gene_col_ID=which(grepl("ENSG",names(brain_caudate_tmp_pheno_cov)))
+
+gene_mean=data.frame(geneID=names(brain_caudate_tmp_pheno_cov)[gene_col_ID],
+                     mean_TPM=apply(brain_caudate_tmp_pheno_cov[,gene_col_ID],2,function(x) mean(as.numeric(x))))
+
+hist(gene_mean$mean_TPM,breaks=200000,xlim=c(0,10))
+```
+<br>
+<br>
+
+#### check number of genes with mean TPM < 1 in blood
+
+```{r check_TPM, echo=TRUE, fig.margin=TRUE}
+
+table(gene_mean$mean_TPM<1)
+```
+> There are 39682 genes with TPM < 1, which can be filtered during the analysis.
+
+<br>
+<br>
+
+#### Exclude genes with mean TPM < 1
+```{r filter_TPM, echo=TRUE, fig.margin=TRUE}
+
+gene_ID_failed=gene_mean$geneID[gene_mean$mean_TPM<1]
+
+brain_caudate_tmp_pheno_cov_TPM_filtered=brain_caudate_tmp_pheno_cov[,!names(brain_caudate_tmp_pheno_cov) %in%gene_ID_failed]
+dim(brain_caudate_tmp_pheno_cov_TPM_filtered)
+```
+
+
+<br>
+<br>
+
+
+#### The function for report the association results 
+
+```{r linear_regression_fun, echo=TRUE, fig.margin=TRUE}
+library(RNOmni)
+library(robustbase)
+
+Phenotype_header=c("AGE","SEX")
+Covariate_header=c(names(brain_caudate_tmp_pheno_cov_TPM_filtered)[grepl('Inferred',names(brain_caudate_tmp_pheno_cov_TPM_filtered))],"PC1","PC2","PC3","PC4","PC5")
+
+lm_sex <- function(Expression_header) {
+  # Function body
+  # Perform operations using arguments and other statements
+  block=brain_caudate_tmp_pheno_cov_TPM_filtered[,c(Expression_header,Phenotype_header,Covariate_header)]
+
+  block <- block %>%
+    mutate_all(as.numeric)
+  
+  block$SEX=as.factor(block$SEX)
+  
+  
+  formula <- paste("RankNorm(", Expression_header, ") ~ .", sep = "")
+
+# Running robust linear regression with a maximum of 2000 iterations
+  lm_test <- lmrob(formula, data = block, k.max = 2000)
+  
+  if (class(lm_test) == "lmrob" && "SEX2" %in% rownames(summary(lm_test)$coefficients)) {
+      # Return the coefficients summary for the 'SEX' variable
+      return(summary(lm_test)$coefficients['SEX2', ])
+    } else {
+      return(c(NA,NA,NA,NA))
+    }
+}
+
+
+```
+
+<br>
+<br>
+
+#### use the function to test first 500 genes by multithreading 
+
+```{r test_2000, echo=TRUE, fig.margin=TRUE}
+
+library(doParallel)
+library(robustbase)
+
+# Set up parallel processing
+num_cores <- detectCores()  # Detect available cores
+cl <- makeCluster(num_cores)  # Create a cluster using available cores
+registerDoParallel(cl)  # Register the cluster for parallel processing
+
+# Extract gene list
+gene_list <- names(brain_caudate_tmp_pheno_cov_TPM_filtered)[grepl("ENSG", names(brain_caudate_tmp_pheno_cov_TPM_filtered))]
+
+# Subset gene list
+gene_list <- gene_list
+
+# Define function for parallel processing
+
+# Perform parallel processing
+results <- foreach(gene = gene_list, .combine = rbind, .packages = c("dplyr","RNOmni","robustbase")) %dopar% {
+  lm_sex(gene)
+}
+
+# Organize results into a data frame
+results <- data.frame(gene = gene_list,
+                      results)
+
+# Order results by p-value
+results <- results[order(results$P),]
+
+# Stop parallel processing
+stopCluster(cl)
+
+# View the top of the results
+head(results)
+```
+
+
+#### visualize gene expression of ENSG00000157870.14 by SEX
+```{r box_age_ENSG00000157870.14, echo=TRUE, fig.margin=TRUE}
+
+library(ggplot2)
+
+# Create a box plot using ggplot2
+ggplot(brain_caudate_tmp_pheno_cov_TPM_filtered, aes(x = SEX, y = RankNorm(as.numeric(ENSG00000157870.14)), fill = as.factor(SEX))) +
+  geom_boxplot() +
+  labs(title = "Box Plot by SEX", x = "SEX", y = "ENSG00000157870.14") +
+  theme_minimal()
+
+```
+
+
+#### write the results to the file
+```{r save_results, echo=TRUE, fig.margin=TRUE}
+
+results$FDR=p.adjust(results$Pr...t..,method = 'fdr')
+
+write.table(results, "brain_caudate_lmrob_SEX_multhread_with_ranknorm_FDR.txt", quote=F, row.names = F, sep='\t')
+
+```

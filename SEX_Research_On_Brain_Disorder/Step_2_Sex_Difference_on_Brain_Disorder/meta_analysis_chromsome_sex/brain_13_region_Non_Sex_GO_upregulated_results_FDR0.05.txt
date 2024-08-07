@@ -1,0 +1,5 @@
+query	significant	p_value	term_size	query_size	intersection_size	precision	recall	term_id	source	term_name	effective_domain_size	source_order	parents
+query_1	TRUE	0.0017735737511082	3	1	1	1	0.333333333333333	CORUM:6219	CORUM	DGKZ-RASGRP1-HRAS complex	3383	1983	CORUM:0000000
+query_1	TRUE	0.0412913656251667	2	6	1	0.166666666666667	0.5	MIRNA:rno-miR-19a-3p	MIRNA	rno-miR-19a-3p	14819	2652	MIRNA:000000
+query_1	TRUE	0.0412913656251667	2	6	1	0.166666666666667	0.5	MIRNA:rno-miR-19b-3p	MIRNA	rno-miR-19b-3p	14819	2653	MIRNA:000000
+query_1	TRUE	0.0461093384809018	26	12	2	0.166666666666667	0.0769230769230769	GO:0060706	GO:BP	cell differentiation involved in embryonic placenta development	21031	15352	c("GO:0001892", "GO:0003006", "GO:0030154")

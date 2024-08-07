@@ -1,0 +1,16 @@
+query	significant	p_value	term_size	query_size	intersection_size	precision	recall	term_id	source	term_name	effective_domain_size	source_order	parents
+query_1	TRUE	0.0141822970209871	2	4	1	0.25	0.5	CORUM:6582	CORUM	LRRC8A-LRRC8D complex	3383	2232	CORUM:0000000
+query_1	TRUE	0.0165093475121987	7	4	1	0.25	0.142857142857143	CORUM:6521	CORUM	Akt-PHLPP1-PHLPP2-FANCI-FANCD2-USP1-UAF1 complex	3383	2196	CORUM:0000000
+query_1	TRUE	0.0165093475121987	5	4	1	0.25	0.2	CORUM:6567	CORUM	SWELL1-containing complex	3383	2224	CORUM:0000000
+query_1	TRUE	0.0169434042542248	12	4	1	0.25	0.0833333333333333	CORUM:563	CORUM	F1F0-ATP synthase, mitochondrial	3383	318	CORUM:0000000
+query_1	TRUE	0.0169434042542248	12	4	1	0.25	0.0833333333333333	CORUM:6442	CORUM	Cytochrome c oxidase, mitochondrial	3383	2131	CORUM:0000000
+query_1	TRUE	0.0312932911141901	1	22	1	0.0454545454545455	1	GO:0015327	GO:MF	cystine:glutamate antiporter activity	20212	2479	c("GO:0005313", "GO:0015297", "GO:0015328")
+query_1	TRUE	0.0312932911141901	1	22	1	0.0454545454545455	1	GO:0015328	GO:MF	cystine secondary active transmembrane transporter activity	20212	2480	c("GO:0005294", "GO:0072349", "GO:1901680")
+query_1	TRUE	0.0312932911141901	1	22	1	0.0454545454545455	1	GO:0099567	GO:MF	calcium ion binding involved in regulation of postsynaptic cytosolic calcium ion concentration	20212	9229	GO:0099510
+query_1	TRUE	0.0312932911141901	1	22	1	0.0454545454545455	1	GO:0140926	GO:MF	L-kynurenine transmembrane transporter activity	20212	10715	GO:0015179
+query_1	TRUE	0.0357451813172254	2	22	1	0.0454545454545455	0.5	GO:0005294	GO:MF	neutral L-amino acid secondary active transmembrane transporter activity	20212	1399	c("GO:0015175", "GO:0015291")
+query_1	TRUE	0.0357451813172254	2	22	1	0.0454545454545455	0.5	GO:0099510	GO:MF	calcium ion binding involved in regulation of cytosolic calcium ion concentration	20212	9221	GO:0005509
+query_1	TRUE	0.0357451813172254	2	22	1	0.0454545454545455	0.5	GO:0099534	GO:MF	calcium ion binding involved in regulation of presynaptic cytosolic calcium ion concentration	20212	9228	GO:0099510
+query_1	TRUE	0.0375129442999791	3	22	1	0.0454545454545455	0.333333333333333	GO:0008073	GO:MF	ornithine decarboxylase inhibitor activity	20212	1537	c("GO:0004857", "GO:0042979")
+query_1	TRUE	0.0375129442999791	3	22	1	0.0454545454545455	0.333333333333333	GO:0030623	GO:MF	U5 snRNA binding	20212	3980	GO:0017069
+query_1	TRUE	0.0375129442999791	3	22	1	0.0454545454545455	0.333333333333333	GO:1901680	GO:MF	sulfur-containing amino acid secondary active transmembrane transporter activity	20212	10931	c("GO:0000099", "GO:0015291")

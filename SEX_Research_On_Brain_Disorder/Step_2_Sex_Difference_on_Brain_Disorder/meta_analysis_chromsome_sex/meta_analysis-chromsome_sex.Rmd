@@ -1,0 +1,385 @@
+---
+title: "Section4. Meta_analysis"
+output:
+  html_document: default
+  pdf_document: default
+date: "2024-07-29"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This section provides a guide on how to perform meta-analysis to summarize the effects of the sex onto overall brain tissues. <br>
+
+<br>
+<br>
+
+#### Import the expression data (Beta and SE from random effects)
+
+```{r Importe_expression, echo=TRUE}
+association_file=list.files(path = "/Users/muyangzhang/sex_research_outputs/brain_genes_imrob/brain_regions_lmrob_rmd/Brain_Regions_Imrob_Sex_outputs_txt")
+association_file
+```
+
+
+```{r Importe_expression-2, echo=TRUE}
+###Visualize the files in the "../../Data/TPM_tissue" folder
+
+data=read.table(paste("/Users/muyangzhang/sex_research_outputs/brain_genes_imrob/brain_regions_lmrob_rmd/Brain_Regions_Imrob_Sex_outputs_txt/",association_file[1],sep=''),
+                stringsAsFactors = F,header=T)
+ID=unlist(strsplit(association_file[1],'_'))[2]
+data=data[!is.na(data$Pr...t..),]
+data=data[,1:3]
+
+names(data)=c("Gene",paste(ID,"_Beta",sep=''),paste(ID,"_SE",sep=''))
+
+for (i in 2:length(association_file))
+{
+  newdata=read.table(paste("/Users/muyangzhang/sex_research_outputs/brain_genes_imrob/brain_regions_lmrob_rmd/Brain_Regions_Imrob_Sex_outputs_txt/",association_file[i],sep=''),stringsAsFactors = F,header=T)
+  
+  ID=unlist(strsplit(association_file[i],'_'))[2]
+  newdata=newdata[!is.na(newdata$Pr...t..),]
+  newdata=newdata[,1:3]
+  names(newdata)=c("Gene",paste(ID,"_Beta",sep=''),paste(ID,"_SE",sep=''))
+
+  data=merge(data,newdata,by='Gene',all=T)
+}
+
+
+```
+
+### Keep genes that detected in at least two tissues
+
+```{r clean_data, echo=TRUE}
+
+data_row_na=apply(data,1,function(x) sum(is.na(x)))
+
+data=data[data_row_na<24,]
+
+```
+
+<br>
+<br>
+
+#### 
+
+
+
+
+
+```{r meta_analysis-1, echo=TRUE}
+library(metafor)
+library(foreach)
+library(doParallel)
+```
+
+
+```{r meta_analysis-2, echo=TRUE}
+meta_test=function(data,GENE_ID)
+{
+  beta=as.vector(unlist(data[data$Gene==GENE_ID,grepl("_Beta",names(data))]))
+  se=as.vector(unlist(data[data$Gene==GENE_ID,grepl("_SE",names(data))]))
+  
+  test=rma(yi=beta,sei=se,method='REML',control=list(maxiter=5000,stepadj=0.5))
+  
+  return(c(GENE_ID,test$k.eff,test$beta,test$se,test$zval,test$pval,test$I2,test$H2,test$QE,test$QEp))
+}
+
+# Set the number of cores you want to use
+num_cores <- detectCores()
+
+# Register parallel backend
+cl <- makeCluster(num_cores)
+registerDoParallel(cl)
+
+# Initialize an empty list to store the results
+results_list <- foreach(i = 1:dim(data)[1], .combine = rbind, .packages='metafor') %dopar% {
+  # Calculate each result in parallel
+  meta_test(data, data$Gene[i])
+}
+
+# Close the cluster
+stopCluster(cl)
+
+# Convert the list of results to a data frame
+results <- as.data.frame(results_list)
+
+names(results)=c("gene_ID","RE_sample_size",
+                 "RE_beta","RE_SE","RE_Z","RE_metaP",
+                 "RE_I2","RE_H2","RE_Q_val","RE_Q_pval")
+
+results$RE_metaP_FDR=p.adjust(as.numeric(results$RE_metaP),method='fdr')
+
+results=results[order(results$RE_metaP_FDR),]
+
+sum(as.numeric(results$RE_metaP_FDR)<0.05)
+sum(as.numeric(results$RE_metaP)<0.05)
+
+write.table(results,"brain_13_region_sex_meta_results.txt",quote=F,sep='\t',row.names = F)
+
+```
+
+<br>
+<br>
+
+### QC on meta-analysis data - number of detected tissues
+
+```{r meta_QC_number, echo=TRUE}
+
+table(results$RE_sample_size)
+table(results$RE_sample_size,as.numeric(results$RE_metaP_FDR)<0.05)
+
+```
+
+> There are some genes only detected in one brain region, so attention whould be required when performing the downstream analysis
+
+<br>
+<br>
+
+
+### QC on meta-analysis data - number of detected tissues and their significance
+
+```{r meta_QC_number_FDR, echo=TRUE}
+
+table(results$RE_sample_size,results$RE_metaP_FDR<0.05)
+
+
+```
+> we see that majority of significant genes were detected in all 13 brain regions. Those set can be focused in some of downstream analysis
+
+
+<br>
+<br>
+
+### QC on meta-analysis data - heterogeneity
+
+```{r meta_QC_number_FDR-2, echo=TRUE}
+
+table(results$RE_sample_size[results$RE_metaP_FDR<0.05],(results$RE_Q_pval>0.05)[results$RE_metaP_FDR<0.05])
+
+
+```
+
+
+### GO analysis of the results (all genes) with low heterogenity.
+
+```{r GO_analysis, echo=TRUE}
+
+library(gprofiler2)
+
+gene_ID_clean=as.vector(sapply(results$gene_ID,function(x) unlist(strsplit(x,'[.]'))[1]))
+
+gostres2 <- gost(query = c(gene_ID_clean[results$RE_metaP_FDR<0.05 & results$RE_Q_pval > 0.05]), 
+                organism = "hsapiens", user_threshold = 0.05, correction_method = "fdr", 
+                domain_scope = "annotated")
+
+GO_results=as.matrix(gostres2$result)
+GO_results=GO_results[order(as.numeric(unlist(GO_results[,3]))),]
+
+write.table(GO_results,"brain_13_region_Sex_GO_results_FDR0.05.txt",quote=F,sep='\t',row.names = F)
+
+head(GO_results)
+```
+
+<br>
+<br>
+
+### GO analysis of the up regulated genes with low heterogenity.
+
+```{r GO_analysis_UP, echo=TRUE}
+
+library(gprofiler2)
+
+gostres2_UP <- gost(query = c(gene_ID_clean[results$RE_metaP_FDR<0.05 & results$RE_beta>0 & results$RE_Q_pval>0.05]), 
+                organism = "hsapiens", user_threshold = 0.05, correction_method = "fdr", 
+                domain_scope = "annotated")
+
+GO_UP_results=as.matrix(gostres2_UP$result)
+GO_UP_results=GO_UP_results[order(as.numeric(unlist(GO_UP_results[,3]))),]
+
+write.table(GO_UP_results,"brain_13_region_Sex_GO_UP_results_FDR0.05.txt",quote=F,sep='\t',row.names = F)
+
+head(GO_UP_results)
+
+```
+
+
+<br>
+<br>
+
+### GO analysis of the down regulated genes with low heterogenity
+
+```{r GO_analysis_down, echo=TRUE}
+
+library(gprofiler2)
+
+gostres2_DOWN <- gost(query = c(gene_ID_clean[results$RE_metaP_FDR<0.05 & results$RE_beta<0 & results$RE_Q_pval>0.05]), 
+                organism = "hsapiens", user_threshold = 0.05, correction_method = "fdr", 
+                domain_scope = "annotated")
+
+GO_DOWN_results=as.matrix(gostres2_DOWN$result)
+GO_DOWN_results=GO_DOWN_results[order(as.numeric(unlist(GO_DOWN_results[,3]))),]
+
+write.table(GO_DOWN_results,"brain_13_Sex_region_GO_DOWN_results_FDR0.05.txt",quote=F,sep='\t',row.names = F)
+
+head(GO_DOWN_results)
+
+```
+<br>
+<br>
+
+### Extracting the names of Genes.
+```{r Extracting the Gene_ID}
+gene_ID_list <- results$gene_ID
+write.table(gene_ID_list, "gene_ID_list.txt", quote = FALSE, row.names = FALSE, col.names = FALSE)
+```
+```{r}
+head(results)
+```
+
+### Importing the Chromsome Data
+```{r Importing the chromsome data}
+chromosome_data <- read.table("/Users/muyangzhang/Downloads/mart_export.txt", header = TRUE, sep = "\t")
+colnames(chromosome_data) <- c("gene_ID", "Chromosome", "Gene_Start", "Gene_End")
+head(chromosome_data)
+```
+### Merging the datasets
+```{r Merging the datasets}
+results <- merge(results, chromosome_data, by = "gene_ID")
+head(results)
+```
+
+
+### Cagatorize the chromosome data based on sex and non-sex
+```{r Cagatorize the chromsome data based on sex and non-sex}
+results$Chromosome_type = ifelse(results$Chromosome %in% c("X", "Y"), "Sex", "Autosomal")
+head(results)
+```
+```{r Saving the Meta_analysis_results_with Chromosome Annotated}
+write.table(results,"brain_13_Sex_region_meta_Chromsome_Annotated.txt",quote=F,sep='\t',row.names = F)
+```
+### Seperate the data based on the charomsome type
+```{r Seperate the data based on the charomsome type}
+sex_results <- subset(results, Chromosome_type == "Sex")
+auto_results <- subset(results, Chromosome_type == "Autosomal")
+```
+```{r}
+head(sex_results)
+head(auto_results)
+```
+### FDR Adjustment
+```{r FDR adjustment}
+sex_results$RE_metaP_FDR_Adjusted <- p.adjust(sex_results$RE_metaP, method = "fdr")
+auto_results$RE_metaP_FDR_Adjusted <- p.adjust(auto_results$RE_metaP, method = "fdr")
+```
+```{r}
+head(sex_results)
+```
+
+### Volcano plot of meta-analysis results - Sex results with low heterogenity
+
+```{r volcano plot-1, echo=TRUE, fig.margin=TRUE}
+library(ggplot2)
+
+volcano_data=sex_results[,c("RE_beta","RE_metaP","RE_metaP_FDR_Adjusted", "RE_Q_pval")]
+
+volcano_data$color[volcano_data$RE_Q_pval>0.05] <- "gray"
+volcano_data$color[volcano_data$RE_metaP_FDR_Adjusted<0.05 & volcano_data$RE_beta>0 & volcano_data$RE_Q_pval>0.05]='red'
+volcano_data$color[volcano_data$RE_metaP_FDR_Adjusted<0.05 & volcano_data$RE_beta<0 & volcano_data$RE_Q_pval>0.05]='blue'
+
+
+
+ggplot(data=volcano_data, aes(x=as.numeric(RE_beta), y=-log10(as.numeric(RE_metaP)), col=color)) +
+        geom_point() + 
+        theme_minimal() +
+        scale_color_manual(values=c("blue", "grey80", "red"))+
+  theme_classic()
+
+```
+### Volcano plot of meta-analysis results - Non-Sex results with low heterogenity
+```{r volcano plot-2, echo=TRUE, fig.margin=TRUE}
+volcano_data=auto_results[,c("RE_beta","RE_metaP","RE_metaP_FDR_Adjusted", "RE_Q_pval")]
+
+volcano_data$color[volcano_data$RE_Q_pval>0.05] <- "gray"
+volcano_data$color[volcano_data$RE_metaP_FDR_Adjusted<0.05 & volcano_data$RE_beta>0 & volcano_data$RE_Q_pval>0.05]='red'
+volcano_data$color[volcano_data$RE_metaP_FDR_Adjusted<0.05 & volcano_data$RE_beta<0 & volcano_data$RE_Q_pval>0.05]='blue'
+
+
+
+ggplot(data=volcano_data, aes(x=as.numeric(RE_beta), y=-log10(as.numeric(RE_metaP)), col=color)) +
+        geom_point() + 
+        theme_minimal() +
+        scale_color_manual(values=c("blue", "grey80", "red"))+
+  theme_classic()
+```
+
+
+### display the key featured genes (sex) - ones with extremely low meta p-values
+
+```{r check_p_value, echo=TRUE, fig.margin=TRUE}
+
+sex_results[as.numeric(sex_results$RE_metaP)<(1e-50),]
+
+```
+### display the key featured genes (non-sex) - ones with extremely low meta p-values
+```{r check_p_value-2, echo=TRUE, fig.margin=TRUE}
+auto_results[as.numeric(auto_results$RE_metaP)<(1e-50),]
+```
+### GO_analysis_non_sex with low heterogenity
+```{r GO_analysis_non_sex, echo=TRUE}
+
+library(gprofiler2)
+
+gene_ID_clean=as.vector(sapply(auto_results$gene_ID,function(x) unlist(strsplit(x,'[.]'))[1]))
+
+gostres2 <- gost(query = c(gene_ID_clean[auto_results$RE_metaP<0.05 & auto_results$RE_Q_pval > 0.05]), 
+                organism = "hsapiens", user_threshold = 0.05, correction_method = "fdr", 
+                domain_scope = "annotated")
+
+GO_results=as.matrix(gostres2$result)
+GO_results=GO_results[order(as.numeric(unlist(GO_results[,3]))),]
+
+write.table(GO_results,"brain_13_region_Non_Sex_GO_results_FDR0.05.txt",quote=F,sep='\t',row.names = F)
+
+head(GO_results)
+```
+
+### GO_analysis_non_sex with low heterogenity(Upregulated)
+```{r GO_analysis_UP_non_sex, echo=TRUE}
+
+library(gprofiler2)
+
+gostres2_UP <- gost(query = c(gene_ID_clean[auto_results$RE_metaP<0.05 & auto_results$RE_beta>0 & auto_results$RE_Q_pval>0.05]), 
+                organism = "hsapiens", user_threshold = 0.05, correction_method = "fdr", 
+                domain_scope = "annotated")
+
+GO_UP_results=as.matrix(gostres2_UP$result)
+GO_UP_results=GO_UP_results[order(as.numeric(unlist(GO_UP_results[,3]))),]
+
+write.table(GO_UP_results,"brain_13_region_Non_Sex_GO_upregulated_results_FDR0.05.txt",quote=F,sep='\t',row.names = F)
+
+head(GO_UP_results)
+
+```
+
+### GO_analysis_non_sex with low heterogenity(Down_regulated)
+```{r GO_analysis_down_non_sex, echo=TRUE}
+
+library(gprofiler2)
+
+gostres2_UP <- gost(query = c(gene_ID_clean[auto_results$RE_metaP<0.05 & auto_results$RE_beta<0 & auto_results$RE_Q_pval>0.05]), 
+                organism = "hsapiens", user_threshold = 0.05, correction_method = "fdr", 
+                domain_scope = "annotated")
+
+GO_UP_results=as.matrix(gostres2_UP$result)
+GO_UP_results=GO_UP_results[order(as.numeric(unlist(GO_UP_results[,3]))),]
+
+write.table(GO_UP_results,"brain_13_region_Non_Sex_GO_downregulated_results_FDR0.05.txt",quote=F,sep='\t',row.names = F)
+
+head(GO_UP_results)
+
+```
+<br>
+
+>> the top candidates are from sex chromosome, thus, proper analsyis should be conducted to stratify results from sex or non-sex chromosome
